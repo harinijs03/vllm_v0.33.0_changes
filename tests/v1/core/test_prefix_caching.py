@@ -2946,6 +2946,26 @@ def test_evict():
     assert manager.block_pool.free_block_queue.num_free_blocks == 7
 
 
+def test_lfu_gpu_eviction_prefers_less_frequently_used_block():
+    pool = BlockPool(
+        num_gpu_blocks=4,
+        enable_caching=True,
+        hash_block_size=16,
+        gpu_kv_cache_eviction_policy="lfu",
+    )
+    blocks = pool.get_new_blocks(3)
+    request = make_request("lfu", list(range(48)), 16, sha256)
+    pool.cache_full_blocks(request, blocks, 0, 3, 16, 0)
+    pool.free_blocks(reversed(blocks))
+
+    pool.touch([blocks[0]])
+    pool.free_blocks([blocks[0]])
+
+    evicted = pool.get_new_blocks(1)[0]
+    assert evicted.block_id == blocks[1].block_id
+    assert evicted.block_hash is None
+
+
 def test_hash_block_correct_reuse():
     """This tests when a previously cached block is reused as a new block,
     its hash metadata should be correctly reset.

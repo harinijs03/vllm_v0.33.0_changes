@@ -26,6 +26,12 @@ Beyond the optimization levels, three mechanisms reduce time-to-first-token on r
 
 ## Preemption
 
+The GPU KV cache uses LRU eviction by default. To choose a least-frequently-used
+policy instead, set `gpu_kv_cache_eviction_policy="lfu"` in `CacheConfig` or
+pass `--gpu-kv-cache-eviction-policy lfu` on the command line. The LFU policy
+breaks frequency ties by recency. See the [GPU KV-cache eviction design](../design/gpu_kv_cache_eviction.md)
+for behavior and implementation details.
+
 Due to the autoregressive nature of transformer architecture, there are times when KV cache space is insufficient to handle all batched requests.
 In such cases, vLLM can preempt requests to free up KV cache space for other requests. Preempted requests are recomputed when sufficient KV cache space becomes
 available again. When this occurs, you may see the following warning:

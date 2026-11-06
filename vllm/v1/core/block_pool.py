@@ -12,6 +12,7 @@ from vllm.distributed.kv_events import (
 )
 from vllm.logger import init_logger
 from vllm.multimodal.utils import get_mm_features_in_window
+from vllm.v1.core.eviction_policy import create_gpu_kv_cache_eviction_policy
 from vllm.v1.core.kv_cache_metrics import KVCacheMetricsCollector
 from vllm.v1.core.kv_cache_utils import (
     BlockHash,
@@ -153,6 +154,7 @@ class BlockPool:
         metrics_collector: Optional metrics collector for tracking block residency.
         num_hash_lookahead_tokens: Tokens after each block covered by its hash.
         medium: Storage medium reported in KV cache events.
+        gpu_kv_cache_eviction_policy: Policy for selecting cached blocks for reuse.
 
     """
 
@@ -165,6 +167,7 @@ class BlockPool:
         metrics_collector: KVCacheMetricsCollector | None = None,
         num_hash_lookahead_tokens: int = 0,
         medium: str = MEDIUM_GPU,
+        gpu_kv_cache_eviction_policy: str = "lru",
     ):
         assert isinstance(num_gpu_blocks, int) and num_gpu_blocks > 0
         self.num_gpu_blocks = num_gpu_blocks
@@ -180,6 +183,9 @@ class BlockPool:
         # list of free blocks (including eviction candidates when caching is
         # enabled).
         self.free_block_queue = FreeKVCacheBlockQueue(self.blocks)
+        self.eviction_policy = create_gpu_kv_cache_eviction_policy(
+            gpu_kv_cache_eviction_policy, self.blocks
+        )
 
         # Cache for block lookup
         self.cached_block_hash_to_block: BlockHashToBlockMap = BlockHashToBlockMap()
@@ -646,6 +652,7 @@ class BlockPool:
             ):
                 removed_hashes.append(block_hash)
         block.reset_hash()
+        self.eviction_policy.on_cache_remove(block)
         return removed_hashes
 
     def _emit_block_removed_events(
@@ -679,6 +686,7 @@ class BlockPool:
 
         if block.block_hash is None:
             block.set_block_hash(block_hash_with_group_id, num_tokens=num_tokens)
+            self.eviction_policy.on_cache_insert(block)
         else:
             self.cached_block_hashes_by_block.setdefault(block.block_id, set()).add(
                 block_hash_with_group_id
@@ -718,7 +726,7 @@ class BlockPool:
         if num_blocks > self.get_num_free_blocks():
             raise ValueError(f"Cannot get {num_blocks} free blocks from the pool")
 
-        ret: list[KVCacheBlock] = self.free_block_queue.popleft_n(num_blocks)
+        ret = self.eviction_policy.allocate_blocks(self.free_block_queue, num_blocks)
 
         if self._reuse_watchers:
             self._notify_reuse(ret)
@@ -765,6 +773,8 @@ class BlockPool:
             if block.ref_cnt == 0:
                 released.append(block)
         self.free_block_queue.append_n(released)
+        for block in released:
+            self.eviction_policy.on_block_freed(block)
 
     def _maybe_evict_cached_block(self, block: KVCacheBlock) -> bool:
         """If a block is cached in `cached_block_hash_to_block`, we reset its hash
@@ -806,6 +816,7 @@ class BlockPool:
             if block.ref_cnt == 0:
                 self.free_block_queue.remove(block)
             block.ref_cnt += 1
+            self.eviction_policy.on_block_access(block)
             if self.metrics_collector:
                 self.metrics_collector.on_block_accessed(block)
 
@@ -845,6 +856,8 @@ class BlockPool:
         self.free_block_queue.prepend_n(blocks_to_evict_first)
         # Blocks to reuse last are appended to the end of the free queue.
         self.free_block_queue.append_n(blocks_to_evict_last)
+        for block in (*blocks_to_evict_first, *blocks_to_evict_last):
+            self.eviction_policy.on_block_freed(block)
         for pool, blocks in other_pools.items():
             pool.free_blocks(blocks)
 
@@ -888,6 +901,7 @@ class BlockPool:
             return False
 
         # Remove all hashes so that no new blocks will hit.
+        self.eviction_policy.clear()
         self.cached_block_hash_to_block = BlockHashToBlockMap()
         self.cached_block_hashes_by_block.clear()
         if self._reuse_watchers:

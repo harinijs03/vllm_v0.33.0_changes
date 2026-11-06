@@ -293,6 +293,7 @@ def test_scheduler_config_hash_includes_max_num_seqs():
 def test_cache_config_hash_ignores_prefix_cache_retention_interval():
     base_hash = CacheConfig().compute_hash()
     assert CacheConfig(prefix_cache_retention_interval=64).compute_hash() == base_hash
+    assert CacheConfig(gpu_kv_cache_eviction_policy="lfu").compute_hash() == base_hash
 
 
 def test_cache_config_hash_ignores_runtime_offload_sizing():

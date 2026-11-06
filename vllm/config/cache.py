@@ -256,6 +256,12 @@ class CacheConfig:
     `ModelConfig` and that value should be manually duplicated here."""
     enable_prefix_caching: bool = True
     """Whether to enable prefix caching."""
+    gpu_kv_cache_eviction_policy: Literal["lru", "lfu"] = "lru"
+    """Policy for selecting cached GPU KV-cache blocks for eviction.
+
+    ``lru`` preserves the default least-recently-used behavior. ``lfu`` evicts
+    the least-frequently-used cached block, using recency to break ties.
+    """
     prefix_caching_hash_algo: PrefixCachingHashAlgo = "sha256"
     """Set the hash algorithm for prefix caching:
 
@@ -411,6 +417,7 @@ class CacheConfig:
             "enable_prefix_caching",
             "prefix_caching_hash_algo",
             "prefix_cache_retention_interval",
+            "gpu_kv_cache_eviction_policy",
             # Prefix-caching implementation detail (doesn't affect compiled graph).
             "prefix_match_unit",
             "enable_mamba_shared_prefix_checkpoint",

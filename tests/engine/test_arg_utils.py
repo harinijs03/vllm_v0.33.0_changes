@@ -655,6 +655,7 @@ def test_prefix_cache_default():
     engine_args = EngineArgs.from_cli_args(args=args)
     assert engine_args.enable_prefix_caching is None
     assert engine_args.prefix_cache_retention_interval == 0
+    assert engine_args.gpu_kv_cache_eviction_policy == "lru"
 
     # with flag to turn it on.
     args = parser.parse_args(["--enable-prefix-caching"])
@@ -669,6 +670,10 @@ def test_prefix_cache_default():
     args = parser.parse_args(["--prefix-cache-retention-interval", "64"])
     engine_args = EngineArgs.from_cli_args(args=args)
     assert engine_args.prefix_cache_retention_interval == 64
+
+    args = parser.parse_args(["--gpu-kv-cache-eviction-policy", "lfu"])
+    engine_args = EngineArgs.from_cli_args(args=args)
+    assert engine_args.gpu_kv_cache_eviction_policy == "lfu"
 
 
 @pytest.mark.parametrize(

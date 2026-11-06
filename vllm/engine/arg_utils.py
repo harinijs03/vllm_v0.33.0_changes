@@ -596,6 +596,9 @@ class EngineArgs:
     )
     block_size: int | None = None
     enable_prefix_caching: bool | None = None
+    gpu_kv_cache_eviction_policy: Literal["lru", "lfu"] = (
+        CacheConfig.gpu_kv_cache_eviction_policy
+    )
     prefix_caching_hash_algo: PrefixCachingHashAlgo = (
         CacheConfig.prefix_caching_hash_algo
     )
@@ -1404,6 +1407,10 @@ class EngineArgs:
                 **cache_kwargs["enable_prefix_caching"],
                 "default": None,
             },
+        )
+        cache_group.add_argument(
+            "--gpu-kv-cache-eviction-policy",
+            **cache_kwargs["gpu_kv_cache_eviction_policy"],
         )
         cache_group.add_argument(
             "--prefix-caching-hash-algo", **cache_kwargs["prefix_caching_hash_algo"]
@@ -2313,6 +2320,7 @@ class EngineArgs:
             num_gpu_blocks_override=self.num_gpu_blocks_override,
             sliding_window=sliding_window,
             enable_prefix_caching=self.enable_prefix_caching,
+            gpu_kv_cache_eviction_policy=self.gpu_kv_cache_eviction_policy,
             prefix_caching_hash_algo=self.prefix_caching_hash_algo,
             prefix_cache_retention_interval=self.prefix_cache_retention_interval,
             kv_cache_dtype_skip_layers=self.kv_cache_dtype_skip_layers,
